@@ -4,8 +4,6 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
 	"lucor.dev/paw/internal/icon"
@@ -28,23 +26,31 @@ func (m *Metadata) Icon() fyne.Resource {
 	if m.Favicon != nil {
 		return m.Favicon
 	}
-	switch m.Type {
-	case paw.NoteItemType:
-		return icon.NoteOutlinedIconThemed
-	case paw.PasswordItemType:
-		return icon.PasswordOutlinedIconThemed
-	case paw.LoginItemType:
-		return icon.PublicOutlinedIconThemed
+	if m.Type == paw.LoginItemType {
+		return icon.KeyOutlinedIconThemed
 	}
 	return icon.PawIcon
 }
 
 func ShowMetadata(m *paw.Metadata) fyne.CanvasObject {
-	return container.New(
-		layout.NewFormLayout(),
-		widget.NewLabel("Modified"),
-		widget.NewLabel(m.Modified.Format(time.RFC1123)),
-		widget.NewLabel("Created"),
-		widget.NewLabel(m.Created.Format(time.RFC1123)),
-	)
+	ctime := &widget.TextSegment{
+		Style: widget.RichTextStyleStrong,
+		Text:  "Created: ",
+	}
+	c_time := &widget.TextSegment{
+		Style: widget.RichTextStyleInline,
+		Text:  m.Created.Format(time.RFC1123),
+	}
+	mtime := &widget.TextSegment{
+		Style: widget.RichTextStyleStrong,
+		Text:  "Modified: ",
+	}
+	m_time := &widget.TextSegment{
+		Style: widget.RichTextStyleInline,
+		Text:  m.Modified.Format(time.RFC1123),
+	}
+	nl := &widget.TextSegment{
+		Style: widget.RichTextStyleParagraph,
+	}
+	return widget.NewRichText(ctime, c_time, nl, mtime, m_time, nl)
 }

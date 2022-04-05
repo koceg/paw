@@ -95,29 +95,3 @@ func PassphrasePasswordMaxLength() int {
 func SetPassphrasePasswordMaxLength(len int) {
 	fyne.CurrentApp().Preferences().SetInt("passphrase_password_max_length", paw.PassphrasePasswordMaxLength)
 }
-
-// TOTP Password options
-
-func TOTPDigits() int {
-	return fyne.CurrentApp().Preferences().IntWithFallback("totp_digits", paw.TOTPDigitsDefault)
-}
-
-func SetTOTPDigits(digits int) {
-	fyne.CurrentApp().Preferences().SetInt("totp_digits", paw.TOTPDigitsDefault)
-}
-
-func TOTPHash() string {
-	return fyne.CurrentApp().Preferences().StringWithFallback("totp_string", string(paw.TOTPHashDefault))
-}
-
-func SetTOTPHash(len int) {
-	fyne.CurrentApp().Preferences().SetString("totp_string", string(paw.TOTPHashDefault))
-}
-
-func TOTPInverval() int {
-	return fyne.CurrentApp().Preferences().IntWithFallback("totp_interval", paw.TOTPIntervalDefault)
-}
-
-func SetTOTPInverval(interval int) {
-	fyne.CurrentApp().Preferences().SetInt("totp_interval", paw.TOTPIntervalDefault)
-}

@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
+	"lucor.dev/paw/internal/azure"
 	"lucor.dev/paw/internal/icon"
 	"lucor.dev/paw/internal/paw"
 )
@@ -16,7 +17,7 @@ import (
 type itemsWidget struct {
 	widget.BaseWidget
 
-	vault *paw.Vault
+	vault *azure.SecretsVault
 
 	selectedIndex int
 
@@ -31,7 +32,7 @@ type itemsWidget struct {
 }
 
 // newItemsWidget returns a new items widget
-func newItemsWidget(vault *paw.Vault, opts *paw.VaultFilterOptions) *itemsWidget {
+func newItemsWidget(vault *azure.SecretsVault, opts *paw.VaultFilterOptions) *itemsWidget {
 	iw := &itemsWidget{
 		vault:         vault,
 		selectedIndex: -1,

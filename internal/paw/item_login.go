@@ -1,15 +1,12 @@
 package paw
 
-import (
-	"time"
-)
+import "strings"
 
 // Declare conformity to Item interface
 var _ Item = (*Login)(nil)
 
 type Login struct {
 	*Password `json:"password,omitempty"`
-	*TOTP     `json:"totp,omitempty"`
 	*Note     `json:"note,omitempty"`
 	*Metadata `json:"metadata,omitempty"`
 
@@ -18,15 +15,23 @@ type Login struct {
 }
 
 func NewLogin() *Login {
-	now := time.Now()
 	return &Login{
 		Metadata: &Metadata{
-			Type:     LoginItemType,
-			Created:  now,
-			Modified: now,
+			Type: LoginItemType,
 		},
 		Note:     &Note{},
 		Password: &Password{},
-		TOTP:     &TOTP{},
+	}
+}
+
+// would split the string to Username Url and Notes
+func (s *Login) SetContent(data *string) {
+	if data != nil {
+		d := strings.Split(*data, "|")
+		if len(d) == 3 {
+			s.Username = d[0]
+			s.URL = d[1]
+			s.Note.Value = d[2]
+		}
 	}
 }

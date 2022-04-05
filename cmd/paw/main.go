@@ -14,10 +14,10 @@ import (
 var Version string
 
 func main() {
-	a := app.NewWithID("dev.lucor.paw")
+	a := app.NewWithID("dev.koceg.pawazure")
 	a.SetIcon(icon.PawIcon)
 
-	w := a.NewWindow("Paw")
+	w := a.NewWindow("PawAzure")
 	w.SetMaster()
 	w.Resize(fyne.NewSize(800, 600))
 	w.SetContent(ui.Make(a, w, version()))

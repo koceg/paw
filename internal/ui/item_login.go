@@ -37,7 +37,7 @@ func (login *Login) Icon() fyne.Resource {
 	if login.Favicon != nil {
 		return login.Favicon
 	}
-	return icon.PublicOutlinedIconThemed
+	return icon.KeyOutlinedIconThemed
 }
 
 func (login *Login) Edit(ctx context.Context, key *paw.Key, w fyne.Window) (fyne.CanvasObject, paw.Item) {
@@ -52,8 +52,6 @@ func (login *Login) Edit(ctx context.Context, key *paw.Key, w fyne.Window) (fyne
 	*loginItem.Note = *login.Note
 	loginItem.Password = &paw.Password{}
 	*loginItem.Password = *login.Password
-	loginItem.TOTP = &paw.TOTP{}
-	*loginItem.TOTP = *login.TOTP
 
 	passwordBind := binding.BindString(&loginItem.Password.Value)
 
@@ -70,15 +68,11 @@ func (login *Login) Edit(ctx context.Context, key *paw.Key, w fyne.Window) (fyne
 			return
 		}
 		// no favicon found, fallback to default
-		loginIcon.SetResource(icon.PublicOutlinedIconThemed)
+		loginIcon.SetResource(icon.KeyOutlinedIconThemed)
 	}
 
 	usernameEntry := widget.NewEntryWithData(binding.BindString(&loginItem.Username))
 	usernameEntry.Validator = nil
-
-	uiTOTP := &TOTP{TOTP: loginItem.TOTP}
-	totpForm, totpItem := uiTOTP.Edit(ctx, w)
-	loginItem.TOTP = totpItem
 
 	// the note field
 	noteEntry := widget.NewEntryWithData(binding.BindString(&loginItem.Note.Value))
@@ -93,10 +87,6 @@ func (login *Login) Edit(ctx context.Context, key *paw.Key, w fyne.Window) (fyne
 
 	passwordCopyButton := widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
 		w.Clipboard().SetContent(passwordEntry.Text)
-		fyne.CurrentApp().SendNotification(&fyne.Notification{
-			Title:   "paw",
-			Content: "Password copied to clipboard",
-		})
 	})
 
 	passwordMakeButton := widget.NewButtonWithIcon("Generate", icon.KeyOutlinedIconThemed, func() {
@@ -118,8 +108,6 @@ func (login *Login) Edit(ctx context.Context, key *paw.Key, w fyne.Window) (fyne
 
 	form.Add(container.NewBorder(nil, nil, nil, container.NewHBox(passwordCopyButton, passwordMakeButton), passwordEntry))
 
-	form.Objects = append(form.Objects, totpForm.(*fyne.Container).Objects...)
-
 	form.Add(labelWithStyle("Note"))
 	form.Add(noteEntry)
 
@@ -136,10 +124,6 @@ func (login *Login) Show(ctx context.Context, w fyne.Window) fyne.CanvasObject {
 	}
 	if login.Password.Value != "" {
 		obj = append(obj, copiablePasswordRow("Password", login.Password.Value, w)...)
-	}
-	if login.TOTP != nil && login.TOTP.Secret != "" {
-		uiTOTP := &TOTP{TOTP: login.TOTP}
-		obj = append(obj, uiTOTP.Show(ctx, w)...)
 	}
 	if login.Note != nil && login.Note.Value != "" {
 		obj = append(obj, copiableRow("Note", login.Note.Value, w)...)
@@ -165,10 +149,6 @@ func newURLEntryWithData(ctx context.Context, bind binding.String) *urlEntry {
 	e.Validator = nil
 
 	rawurl, _ := bind.Get()
-	if rawurl == "" {
-		rawurl = "https://"
-		e.SetText(rawurl)
-	}
 
 	e.host = e.hostFromRawURL(rawurl)
 	return e

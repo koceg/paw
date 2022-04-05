@@ -1,13 +1,10 @@
 package ui
 
 import (
-	"errors"
-	"fmt"
 	"log"
 	"net/url"
 	"runtime"
 
-	"filippo.io/age"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -15,20 +12,29 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"lucor.dev/paw/internal/azure"
 	"lucor.dev/paw/internal/icon"
-	"lucor.dev/paw/internal/paw"
 )
+
+// newVaultView is the function that would get us the visual data of the VAULT
+// that we are going to interact withnn
 
 // maxWorkers represents the max number of workers to use in parallel processing
 var maxWorkers = runtime.NumCPU()
 
+// progress bar visual representation of Clipboard Timeout
+var progress *widget.ProgressBar
+
 // mainView represents the Paw main view
+// TODO modify to reflect azure keyvault structure
 type mainView struct {
 	fyne.Window
 
-	storage paw.Storage
+	Conf  *azure.Config
+	token azcore.TokenCredential
 
-	unlockedVault map[string]*paw.Vault // this act as cache
+	unlockedVault map[string]*azure.SecretsVault // this act as cache
 
 	view *fyne.Container
 
@@ -37,10 +43,14 @@ type mainView struct {
 
 // Make returns the fyne user interface
 func Make(a fyne.App, w fyne.Window, ver string) fyne.CanvasObject {
-	var s paw.Storage
-	var err error
 
-	s, err = paw.NewOSStorage()
+	progress = widget.NewProgressBar()
+	progress.Hide()
+	progress.TextFormatter = func() string {
+		return "Clipboard Timeout"
+	}
+
+	c, err := azure.ReadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -51,8 +61,8 @@ func Make(a fyne.App, w fyne.Window, ver string) fyne.CanvasObject {
 
 	mw := &mainView{
 		Window:        w,
-		storage:       s,
-		unlockedVault: make(map[string]*paw.Vault),
+		Conf:          c,
+		unlockedVault: make(map[string]*azure.SecretsVault),
 		version:       ver,
 	}
 
@@ -69,7 +79,7 @@ func (mw *mainView) setView(v fyne.CanvasObject) {
 func (mw *mainView) makeMainMenu() *fyne.MainMenu {
 	// a Quit item will is appended automatically by Fyne to the first menu item
 	fileMenu := fyne.NewMenu("File",
-		fyne.NewMenuItem("New Vault", func() {
+		fyne.NewMenuItem("Open Vault", func() {
 			mw.setView(mw.createVaultView())
 		}),
 	)
@@ -77,21 +87,20 @@ func (mw *mainView) makeMainMenu() *fyne.MainMenu {
 		mw.Reload()
 	})
 
-	vaults, err := mw.storage.Vaults()
-	if err != nil {
-		log.Fatal(err)
-	}
-	if len(vaults) <= 1 {
+	// config.Vaults can be a function
+	if len(mw.Conf.Vaults) <= 1 {
+		fileMenu.Items[0].Disabled = true
 		switchItem.Disabled = true
 	}
 	fileMenu.Items = append(fileMenu.Items, switchItem)
 
 	helpMenu := fyne.NewMenu("Help",
 		fyne.NewMenuItem("About", func() {
-			u, _ := url.Parse("https://lucor.dev/paw")
-			l := widget.NewLabel("Paw - " + mw.version)
+			URL := "https://github.com/koceg/pawazure"
+			u, _ := url.Parse(URL)
+			l := widget.NewLabel("PawAzure - " + mw.version)
 			l.Alignment = fyne.TextAlignCenter
-			link := widget.NewHyperlink("https://lucor.dev/paw", u)
+			link := widget.NewHyperlink(URL, u)
 			link.Alignment = fyne.TextAlignCenter
 			co := container.NewCenter(
 				container.NewVBox(
@@ -100,7 +109,7 @@ func (mw *mainView) makeMainMenu() *fyne.MainMenu {
 					link,
 				),
 			)
-			d := dialog.NewCustom("About Paw", "Ok", co, mw.Window)
+			d := dialog.NewCustom("About PawAzure", "Ok", co, mw.Window)
 			d.Show()
 		}),
 	)
@@ -118,15 +127,13 @@ func (mw *mainView) Reload() {
 
 func (mw *mainView) buildMainView() fyne.CanvasObject {
 	var view fyne.CanvasObject
-	vaults, err := mw.storage.Vaults()
-	if err != nil {
-		log.Fatal(err)
-	}
+
+	vaults := mw.Conf.Vaults
 	switch len(vaults) {
 	case 0:
 		view = mw.initVaultView()
 	case 1:
-		view = mw.unlockVaultView(vaults[0])
+		view = mw.createVaultView()
 	default:
 		view = mw.vaultListView()
 	}
@@ -134,75 +141,81 @@ func (mw *mainView) buildMainView() fyne.CanvasObject {
 }
 
 // initVaultView returns the view used to create the first vault
+// this is the view if our config file is empty
 func (mw *mainView) initVaultView() fyne.CanvasObject {
 
 	logo := pawLogo()
 
-	heading := headingText("Welcome to Paw")
+	heading := headingText("Configure Azure Subscription")
 	heading.Alignment = fyne.TextAlignCenter
 
-	name := widget.NewEntry()
-	name.SetPlaceHolder("Name")
+	tenant := widget.NewEntry()
+	tenant.SetPlaceHolder("TenantID")
 
-	password := widget.NewPasswordEntry()
-	password.SetPlaceHolder("Password")
+	application := widget.NewEntry()
+	application.SetPlaceHolder("ApplicationID")
 
-	btn := widget.NewButton("Create Vault", func() {
-		key, err := mw.storage.CreateVaultKey(name.Text, password.Text)
-		if err != nil {
+	// this is the part where we authenticate agains azure
+	btn := widget.NewButton("Save", func() {
+		mw.Conf.TenantID = tenant.Text
+		mw.Conf.ClientID = application.Text
+		if err := mw.Conf.WriteConfig(); err != nil {
 			dialog.ShowError(err, mw.Window)
 			return
 		}
-		vault, err := mw.storage.CreateVault(name.Text, key)
-		if err != nil {
-			dialog.ShowError(err, mw.Window)
-			return
-		}
-		mw.unlockedVault[name.Text] = vault
-		mw.setView(newVaultView(mw, vault))
+		mw.setView(mw.createVaultView())
 	})
 	btn.Importance = widget.HighImportance
 
-	return container.NewCenter(container.NewVBox(logo, heading, name, password, btn))
+	return container.NewCenter(container.NewVBox(logo, heading, tenant, application, btn))
 }
 
-// initVaultView returns the view used to create the first vault
 func (mw *mainView) createVaultView() fyne.CanvasObject {
-	heading := headingText("Create a new Vault")
+	heading := headingText("Select Azure Key Vault")
 	heading.Alignment = fyne.TextAlignCenter
 
 	logo := pawLogo()
 
 	name := widget.NewEntry()
-	name.SetPlaceHolder("Name")
-
-	password := widget.NewPasswordEntry()
-	password.SetPlaceHolder("Password")
-
-	createButton := widget.NewButtonWithIcon("Create", theme.ContentAddIcon(), func() {
+	if len(mw.Conf.Vaults) != 0 {
+		name.SetText(mw.Conf.Vaults[0])
+	} else {
+		name.SetPlaceHolder("Vault Name")
+	}
+	createButton := widget.NewButtonWithIcon("Open", theme.ContentAddIcon(), func() {
 		// TODO: update to use the built-in entry validation
 		if name.Text == "" {
 			d := dialog.NewInformation("", "The Vault name cannot be emtpy", mw.Window)
 			d.Show()
 			return
 		}
-		if password.Text == "" {
-			d := dialog.NewInformation("", "The Vault password cannot be emtpy", mw.Window)
-			d.Show()
-			return
+		// we would try and GET the new vault that was selected to be used
+		// and if sucessfull save to config file
+		if mw.token == nil {
+			var err error
+			mw.token, err = mw.Conf.NewCredential()
+			if err != nil {
+				dialog.ShowError(err, mw.Window)
+				return
+			}
 		}
-		key, err := mw.storage.CreateVaultKey(name.Text, password.Text)
+		vault, err := azure.NewSecretsVault(name.Text, mw.token)
 		if err != nil {
 			dialog.ShowError(err, mw.Window)
 			return
 		}
-		vault, err := mw.storage.CreateVault(name.Text, key)
-		if err != nil {
-			dialog.ShowError(err, mw.Window)
-			return
+		// prevent double write of keyvault
+		if mw.Conf.IsAbsent(name.Text) {
+			mw.Conf.Vaults = append(mw.Conf.Vaults, name.Text)
+			if err := mw.Conf.WriteConfig(); err != nil {
+				dialog.ShowError(err, mw.Window)
+				return
+			}
 		}
 		mw.unlockedVault[name.Text] = vault
-		mw.setView(newVaultView(mw, vault))
+		// we need to pass the name of the vault as well
+		mw.setView(newVaultView(mw, vault, name.Text))
+		//mw.setView(nil)
 		mw.SetMainMenu(mw.makeMainMenu())
 	})
 	createButton.Importance = widget.HighImportance
@@ -211,31 +224,41 @@ func (mw *mainView) createVaultView() fyne.CanvasObject {
 		mw.Reload()
 	})
 
-	return container.NewCenter(container.NewVBox(logo, heading, name, password, container.NewHBox(cancelButton, createButton)))
+	return container.NewCenter(container.NewVBox(logo, heading, name, container.NewHBox(cancelButton, createButton)))
 }
 
 // vaultListView returns a view with the list of available vaults
 func (mw *mainView) vaultListView() fyne.CanvasObject {
-
-	heading := headingText("Choose a Vault")
+	// list the vault that we have saved in the config file ~/.paw/azure.json
+	heading := headingText("Azure Key Vaults")
 	heading.Alignment = fyne.TextAlignCenter
 
 	logo := pawLogo()
 
 	c := container.NewVBox(logo, heading)
 
-	vaults, err := mw.storage.Vaults()
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, v := range vaults {
+	for _, v := range mw.Conf.Vaults {
 		name := v
 		resource := icon.LockOpenOutlinedIconThemed
 		if _, ok := mw.unlockedVault[name]; !ok {
 			resource = icon.LockOutlinedIconThemed
 		}
 		btn := widget.NewButtonWithIcon(name, resource, func() {
-			mw.setView(mw.vaultViewByName(name))
+			if mw.token == nil {
+				var err error
+				mw.token, err = mw.Conf.NewCredential()
+				if err != nil {
+					dialog.ShowError(err, mw.Window)
+					return
+				}
+			}
+			vault, err := azure.NewSecretsVault(name, mw.token)
+			if err != nil {
+				dialog.ShowError(err, mw.Window)
+				return
+			}
+			mw.unlockedVault[name] = vault
+			mw.setView(newVaultView(mw, vault, name))
 		})
 		btn.Alignment = widget.ButtonAlignLeading
 		c.Add(btn)
@@ -244,40 +267,18 @@ func (mw *mainView) vaultListView() fyne.CanvasObject {
 	return container.NewCenter(c)
 }
 
-// unlockVaultView returns the view used to unlock a vault
-func (mw *mainView) unlockVaultView(name string) fyne.CanvasObject {
-	logo := pawLogo()
-
-	msg := fmt.Sprintf("Vault %q is locked", name)
-	heading := headingText(msg)
-
-	password := widget.NewPasswordEntry()
-	password.SetPlaceHolder("Password")
-
-	unlockBtn := widget.NewButtonWithIcon("Unlock", icon.LockOpenOutlinedIconThemed, func() {
-		vault, err := mw.storage.LoadVault(name, password.Text)
-		if err != nil {
-			var invalidPasswordError *age.NoIdentityMatchError
-			if errors.As(err, &invalidPasswordError) {
-				err = errors.New("the password is incorrect")
-			}
-			dialog.ShowError(err, mw.Window)
-			return
-		}
-		mw.unlockedVault[name] = vault
-		mw.setView(newVaultView(mw, vault))
-	})
-
-	return container.NewCenter(container.NewVBox(logo, heading, password, unlockBtn))
-}
-
 // vaultView returns the view used to handle a vault
+// redundant as once we are authenticated we have access to all known vaults
 func (mw *mainView) vaultViewByName(name string) fyne.CanvasObject {
-	vault, ok := mw.unlockedVault[name]
+	_, ok := mw.unlockedVault[name]
 	if !ok {
-		return mw.unlockVaultView(name)
+		// this needs to be replaced with newVaultView
+		// onec we obtain a token
+		// return mw.unlockVaultView(name)
+		return widget.NewLabel(name)
 	}
-	return newVaultView(mw, vault)
+	//return newVaultView(mw, vault, name)
+	return widget.NewLabel(name)
 }
 
 func (mw *mainView) LockVault(name string) {

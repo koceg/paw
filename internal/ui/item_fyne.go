@@ -2,9 +2,9 @@ package ui
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -36,13 +36,8 @@ type FynePasswordGenerator interface {
 func NewFyneItem(item paw.Item) FyneItem {
 	var fyneItem FyneItem
 	switch item.GetMetadata().Type {
-	case paw.NoteItemType:
-		fyneItem = &Note{Note: item.(*paw.Note)}
 	case paw.LoginItemType:
 		fyneItem = &Login{Login: item.(*paw.Login)}
-	case paw.PasswordItemType:
-		fyneItem = &Password{Password: item.(*paw.Password)}
-
 	}
 	return fyneItem
 }
@@ -67,10 +62,6 @@ func copiableRow(label string, text string, w fyne.Window) []fyne.CanvasObject {
 	t := widget.NewLabel(text)
 	b := widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
 		w.Clipboard().SetContent(text)
-		fyne.CurrentApp().SendNotification(&fyne.Notification{
-			Title:   "paw",
-			Content: fmt.Sprintf("%s copied", label),
-		})
 	})
 
 	l := labelWithStyle(label)
@@ -87,10 +78,6 @@ func copiableLinkRow(label string, text string, w fyne.Window) []fyne.CanvasObje
 
 	b := widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
 		w.Clipboard().SetContent(text)
-		fyne.CurrentApp().SendNotification(&fyne.Notification{
-			Title:   "paw",
-			Content: fmt.Sprintf("%s copied", label),
-		})
 	})
 
 	l := labelWithStyle(label)
@@ -104,10 +91,20 @@ func copiablePasswordRow(label string, password string, w fyne.Window) []fyne.Ca
 	passwordEntry.Validator = nil
 	passwordCopyButton := widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
 		w.Clipboard().SetContent(password)
-		fyne.CurrentApp().SendNotification(&fyne.Notification{
-			Title:   "paw",
-			Content: fmt.Sprintf("%s copied", label),
-		})
+		go func() {
+			// note this might not be concurrently safe
+			p := password
+			progress.Show()
+			for i := 1.0; i > 0.1; i -= 0.1 {
+				progress.SetValue(i)
+				time.Sleep(1 * time.Second)
+			}
+			c := w.Clipboard()
+			if c.Content() == p {
+				progress.Hide()
+				c.SetContent("")
+			}
+		}()
 	})
 	l := labelWithStyle(label)
 	return []fyne.CanvasObject{l, container.NewBorder(nil, nil, nil, passwordCopyButton, passwordEntry)}
